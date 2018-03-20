@@ -1,5 +1,11 @@
 <library path="librobot_controllers">
 
+  <class name="robot_controllers/JointTorqueController"
+         type="robot_controllers::JointTorqueController"
+         base_class_type="robot_controllers::Controller">
+    <description>Joint Torque Controller</description>
+  </class>
+
   <class name="robot_controllers/GravityCompensation"
          type="robot_controllers::GravityCompensation"
          base_class_type="robot_controllers::Controller">
