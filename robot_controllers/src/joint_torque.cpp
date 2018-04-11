@@ -45,6 +45,7 @@
 
 #include <urdf/model.h>
 #include <kdl_parser/kdl_parser.hpp>
+#include <time.h>
 
 PLUGINLIB_EXPORT_CLASS(robot_controllers::JointTorqueController, robot_controllers::Controller)
 
@@ -100,6 +101,8 @@ int JointTorqueController::init(ros::NodeHandle& nh, ControllerManager* manager)
   desired_torque_.resize(kdl_chain_.getNrOfJoints());
   gravity_torque_.resize(kdl_chain_.getNrOfJoints());
   q_.resize(kdl_chain_.getNrOfJoints());
+  dq_.resize(kdl_chain_.getNrOfJoints());
+  clock_gettime(CLOCK_MONOTONIC, &t_start_);
 
   // Init joint handles
   joints_.clear();
@@ -170,16 +173,41 @@ void JointTorqueController::update(const ros::Time& now, const ros::Duration& dt
   } 
 
   // Get current positions
-  for (size_t i = 0; i < kdl_chain_.getNrOfJoints(); ++i)
+  for (size_t i = 0; i < kdl_chain_.getNrOfJoints(); ++i) {
     q_(i) = joints_[i]->getPosition();
+    dq_(i) = joints_[i]->getVelocity();
+  }
 
   // Do the gravity compensation
   kdl_chain_dynamics_->JntToGravity(q_, gravity_torque_);
 
   // Actually update joints
-  for (size_t j = 0; j < joints_.size(); ++j)
-	joints_[j]->setEffort(gravity_torque_(j) + desired_torque_(j));
+  for (size_t j = 0; j < joints_.size(); ++j) {
+    // Add dither for friction compensation
+    //float t_curr = ros::Time::now().toSec();
+    //joints_[j]->setVelocity(dq_(j) + 0.1 * sin(2*M_PI/5*t_curr), gravity_torque_(j) + desired_torque_(j));
+    joints_[j]->setVelocity(desired_torque_(j), gravity_torque_(j));
+
+    // Set torque including gravity compensation
+    //joints_[j]->setEffort(gravity_torque_(j) + desired_torque_(j));
+    if (j == 7) {
+        timespec t_now;
+        clock_gettime(CLOCK_MONOTONIC, &t_now);
+        timespec dt;
+        if (t_now.tv_nsec - t_start_.tv_nsec < 0) {
+            dt.tv_sec = t_now.tv_sec - t_start_.tv_sec - 1;
+            dt.tv_nsec = t_now.tv_nsec - t_start_.tv_nsec + 1e9;
+        } else {
+            dt.tv_sec = t_now.tv_sec - t_start_.tv_sec;
+            dt.tv_nsec = t_now.tv_nsec - t_start_.tv_nsec;
+        }
+        double t_curr = dt.tv_sec + 1e-9 * double(dt.tv_nsec);
+        joints_[j]->setEffort(gravity_torque_(j) + desired_torque_(j) + 1. * sin(2*M_PI*1000*t_curr));
+	//ROS_WARN("%f %f %f %f", gravity_torque_(j), desired_torque_(j), 1. * sin(2*M_PI*20*t_curr), t_curr);
+}
+    //joints_[j]->setEffort(gravity_torque_(j) + desired_torque_(j));
     // joints_[j]->setEffort(desired_torque_(j));
+  }
 }
 
 void JointTorqueController::command(const std_msgs::Float64MultiArray::ConstPtr& desired_torque)

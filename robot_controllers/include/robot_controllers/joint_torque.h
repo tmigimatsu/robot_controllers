@@ -46,6 +46,7 @@
 #include <string>
 #include <vector>
 #include <boost/shared_ptr.hpp>
+#include <time.h>
 
 #include <ros/ros.h>
 #include <robot_controllers_interface/controller.h>
@@ -132,8 +133,10 @@ private:
   ros::Time last_command_;
 
   KDL::JntArray q_;
+  KDL::JntArray dq_;
   KDL::JntArray desired_torque_;
   KDL::JntArray gravity_torque_;
+  timespec t_start_;
 
   KDL::Chain kdl_chain_;
 

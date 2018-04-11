@@ -72,7 +72,8 @@ int CartesianTwistController::init(ros::NodeHandle& nh, ControllerManager* manag
   // Initialize KDL structures
   std::string tip_link, root_link;
   nh.param<std::string>("root_name", root_link, "torso_lift_link");
-  nh.param<std::string>("tip_name", tip_link, "wrist_roll_link");
+  nh.param<std::string>("tip_name", tip_link, "gripper_link");
+  ROS_INFO("Using tip link %s.", tip_link.c_str());
 
   // Load URDF
   urdf::Model model;
