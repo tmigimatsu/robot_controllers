@@ -58,6 +58,8 @@
 #include <kdl/jntarray.hpp>
 #include <kdl/chaindynparam.hpp>
 
+#include <Eigen/Eigen>
+
 namespace robot_controllers
 {
 
@@ -136,6 +138,7 @@ private:
   KDL::JntArray dq_;
   KDL::JntArray desired_torque_;
   KDL::JntArray gravity_torque_;
+  KDL::JntSpaceInertiaMatrix inertia_;
   timespec t_start_;
 
   KDL::Chain kdl_chain_;

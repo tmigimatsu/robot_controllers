@@ -102,6 +102,7 @@ int JointTorqueController::init(ros::NodeHandle& nh, ControllerManager* manager)
   gravity_torque_.resize(kdl_chain_.getNrOfJoints());
   q_.resize(kdl_chain_.getNrOfJoints());
   dq_.resize(kdl_chain_.getNrOfJoints());
+  inertia_.resize(kdl_chain_.getNrOfJoints());
   clock_gettime(CLOCK_MONOTONIC, &t_start_);
 
   // Init joint handles
@@ -181,31 +182,77 @@ void JointTorqueController::update(const ros::Time& now, const ros::Duration& dt
   // Do the gravity compensation
   kdl_chain_dynamics_->JntToGravity(q_, gravity_torque_);
 
+  // Do forward dynamics
+  //Eigen::VectorXd G(joints_.size());
+  //for (size_t i = 0; i < joints_.size(); ++i) {
+    //G(i) = gravity_torque_(i);
+  //}
+
+  kdl_chain_dynamics_->JntToMass(q_, inertia_);
+  Eigen::MatrixXd A = inertia_.data;
+  //for (size_t i = 0; i < inertia_.rows(); ++i) {
+    //for (size_t j = 0; j < inertia_.cols(); ++j) {
+      //inertia_(i,j) = 0;
+      //A(i,j) = inertia_(i,j);
+    //}
+  //}
+
+  //Eigen::VectorXd tau(joints_.size());
+  //for (size_t i = 0; i < joints_.size(); ++i) {
+    //tau(i) = desired_torque_(i);
+  //}
+  Eigen::VectorXd ddq = inertia_.data.ldlt().solve(desired_torque_.data);
+  Eigen::VectorXd dq = /*dq_.data +*/ ddq * 0.1;
+  //Eigen::VectorXd q = q_.data + 0.5 * (dq_.data + dq) * 0.1;
+  Eigen::VectorXd q = q_.data + dq * 0.1;
+  ROS_WARN("%g %g %g %g %g %g %g; %g", q(0), q(1), q(2), q(3), q(4), q(5), q(6), dt.toSec());
+  //Eigen::VectorXd dq(joints_.size());
+  //Eigen::VectorXd q(joints_.size());
+  //for (size_t i = 0; i < joints_.size(); ++i) {
+    //dq(i) = dq_(i) + ddq(i) * dt.toSec();
+    //q(i) = q_(i) + 0.5 * (dq_(i) + dq(i)) * dt.toSec();
+  //}
+  //ROS_WARN("%d %d %d %d", inertia_.rows(), inertia_.columns(), desired_torque_.rows(), desired_torque_.columns());
+//std::cout << q.transpose() << std::endl;
+  //Eigen::VectorXd q = q_ + dq_ * dt; 
+  //q = q_ + 0.5 * (dq_ + dq) * dt;
+
+  //q = q_ + 0.5 * (dq_ + dq) * dt;
+  //dq = dq_ + 0.5 * (ddq_ + ddq) * dt;
+
+  //kdl_chain_dynamics_->JntToMass(q, inertia_);
+  //for (size_t i = 0; i < joints_.size(); ++i) {
+    //for (size_t j = 0; j < joints_.size(); ++j) {
+      //A(i,j) = inertia_(i,j);
+    //}
+  //}
+  //ddq_ = A.ldlt().solve(desired_torque_(j));
+
   // Actually update joints
   for (size_t j = 0; j < joints_.size(); ++j) {
     // Add dither for friction compensation
     //float t_curr = ros::Time::now().toSec();
     //joints_[j]->setVelocity(dq_(j) + 0.1 * sin(2*M_PI/5*t_curr), gravity_torque_(j) + desired_torque_(j));
-    joints_[j]->setVelocity(desired_torque_(j), gravity_torque_(j));
+    //joints_[j]->setVelocity(desired_torque_(j), gravity_torque_(j));
 
     // Set torque including gravity compensation
-    //joints_[j]->setEffort(gravity_torque_(j) + desired_torque_(j));
-    if (j == 7) {
-        timespec t_now;
-        clock_gettime(CLOCK_MONOTONIC, &t_now);
-        timespec dt;
-        if (t_now.tv_nsec - t_start_.tv_nsec < 0) {
-            dt.tv_sec = t_now.tv_sec - t_start_.tv_sec - 1;
-            dt.tv_nsec = t_now.tv_nsec - t_start_.tv_nsec + 1e9;
-        } else {
-            dt.tv_sec = t_now.tv_sec - t_start_.tv_sec;
-            dt.tv_nsec = t_now.tv_nsec - t_start_.tv_nsec;
-        }
-        double t_curr = dt.tv_sec + 1e-9 * double(dt.tv_nsec);
-        joints_[j]->setEffort(gravity_torque_(j) + desired_torque_(j) + 1. * sin(2*M_PI*1000*t_curr));
+    //if (j == 7) {
+    //    timespec t_now;
+    //    clock_gettime(CLOCK_MONOTONIC, &t_now);
+    //    timespec dt;
+    //    if (t_now.tv_nsec - t_start_.tv_nsec < 0) {
+    //        dt.tv_sec = t_now.tv_sec - t_start_.tv_sec - 1;
+    //        dt.tv_nsec = t_now.tv_nsec - t_start_.tv_nsec + 1e9;
+    //    } else {
+    //        dt.tv_sec = t_now.tv_sec - t_start_.tv_sec;
+    //        dt.tv_nsec = t_now.tv_nsec - t_start_.tv_nsec;
+    //    }
+    //    double t_curr = dt.tv_sec + 1e-9 * double(dt.tv_nsec);
+    //    joints_[j]->setEffort(gravity_torque_(j) + desired_torque_(j) + 1. * sin(2*M_PI*1000*t_curr));
 	//ROS_WARN("%f %f %f %f", gravity_torque_(j), desired_torque_(j), 1. * sin(2*M_PI*20*t_curr), t_curr);
-}
+//}
     //joints_[j]->setEffort(gravity_torque_(j) + desired_torque_(j));
+    joints_[j]->setPosition(q(j), 0, gravity_torque_(j));//, dq(j), gravity_torque_(j) + desired_torque_(j));
     // joints_[j]->setEffort(desired_torque_(j));
   }
 }
