@@ -134,12 +134,18 @@ private:
   std::string root_link_;
   ros::Time last_command_;
 
-  KDL::JntArray q_;
-  KDL::JntArray dq_;
+  KDL::JntArray kdl_q_;
+  KDL::JntArray kdl_dq_;
   KDL::JntArray desired_torque_;
   KDL::JntArray gravity_torque_;
   KDL::JntSpaceInertiaMatrix inertia_;
+
+  unsigned int dof_;
+  Eigen::VectorXd q_;
+  Eigen::VectorXd dq_;
+  Eigen::VectorXd ddq_;
   timespec t_start_;
+  double dt_;
 
   KDL::Chain kdl_chain_;
 

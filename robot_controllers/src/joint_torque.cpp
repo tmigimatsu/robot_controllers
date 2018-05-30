@@ -98,12 +98,18 @@ int JointTorqueController::init(ros::NodeHandle& nh, ControllerManager* manager)
   }
 
   kdl_chain_dynamics_.reset(new KDL::ChainDynParam(kdl_chain_, KDL::Vector(0,0,-9.81)));
-  desired_torque_.resize(kdl_chain_.getNrOfJoints());
-  gravity_torque_.resize(kdl_chain_.getNrOfJoints());
-  q_.resize(kdl_chain_.getNrOfJoints());
-  dq_.resize(kdl_chain_.getNrOfJoints());
-  inertia_.resize(kdl_chain_.getNrOfJoints());
+  dof_ = kdl_chain_.getNrOfJoints();
+  desired_torque_.resize(dof_);
+  gravity_torque_.resize(dof_);
+  kdl_q_.resize(dof_);
+  kdl_dq_.resize(dof_);
+  inertia_.resize(dof_);
   clock_gettime(CLOCK_MONOTONIC, &t_start_);
+
+  q_ = Eigen::VectorXd::Zero(dof_);
+  dq_ = Eigen::VectorXd::Zero(dof_);
+  ddq_ = Eigen::VectorXd::Zero(dof_);
+  dt_ = 0.001;
 
   // Init joint handles
   joints_.clear();
@@ -175,12 +181,13 @@ void JointTorqueController::update(const ros::Time& now, const ros::Duration& dt
 
   // Get current positions
   for (size_t i = 0; i < kdl_chain_.getNrOfJoints(); ++i) {
-    q_(i) = joints_[i]->getPosition();
-    dq_(i) = joints_[i]->getVelocity();
+    kdl_q_(i) = joints_[i]->getPosition();
+    kdl_dq_(i) = joints_[i]->getVelocity();
   }
+  q_ = kdl_q_.data;
 
   // Do the gravity compensation
-  kdl_chain_dynamics_->JntToGravity(q_, gravity_torque_);
+  kdl_chain_dynamics_->JntToGravity(kdl_q_, gravity_torque_);
 
   // Do forward dynamics
   //Eigen::VectorXd G(joints_.size());
@@ -188,8 +195,7 @@ void JointTorqueController::update(const ros::Time& now, const ros::Duration& dt
     //G(i) = gravity_torque_(i);
   //}
 
-  kdl_chain_dynamics_->JntToMass(q_, inertia_);
-  Eigen::MatrixXd A = inertia_.data;
+  kdl_chain_dynamics_->JntToMass(kdl_q_, inertia_);
   //for (size_t i = 0; i < inertia_.rows(); ++i) {
     //for (size_t j = 0; j < inertia_.cols(); ++j) {
       //inertia_(i,j) = 0;
@@ -201,11 +207,21 @@ void JointTorqueController::update(const ros::Time& now, const ros::Duration& dt
   //for (size_t i = 0; i < joints_.size(); ++i) {
     //tau(i) = desired_torque_(i);
   //}
-  Eigen::VectorXd ddq = inertia_.data.ldlt().solve(desired_torque_.data);
-  Eigen::VectorXd dq = /*dq_.data +*/ ddq * 0.1;
-  //Eigen::VectorXd q = q_.data + 0.5 * (dq_.data + dq) * 0.1;
-  Eigen::VectorXd q = q_.data + dq * 0.1;
-  ROS_WARN("%g %g %g %g %g %g %g; %g", q(0), q(1), q(2), q(3), q(4), q(5), q(6), dt.toSec());
+  for (size_t i = 0; i * dt_ < 0.005; i++) {
+  Eigen::VectorXd q = q_ + dq_ * dt_;
+  Eigen::VectorXd dq = dq_ + ddq_ * dt_;
+
+  Eigen::VectorXd ddq = inertia_.data.llt().solve(desired_torque_.data);
+  q_ += 0.5 * (dq_ + dq) * dt_;
+  dq_ += 0.5 * (ddq_ + ddq) * dt_;
+
+  kdl_q_.data = q_;
+  kdl_dq_.data = dq_;
+  kdl_chain_dynamics_->JntToMass(kdl_q_, inertia_);
+  ddq_ = inertia_.data.llt().solve(desired_torque_.data);
+  }
+  
+  ROS_WARN("%g %g %g %g %g %g %g; %g", q_(0), q_(1), q_(2), q_(3), q_(4), q_(5), q_(6), dt.toSec());
   //Eigen::VectorXd dq(joints_.size());
   //Eigen::VectorXd q(joints_.size());
   //for (size_t i = 0; i < joints_.size(); ++i) {
@@ -252,7 +268,11 @@ void JointTorqueController::update(const ros::Time& now, const ros::Duration& dt
 	//ROS_WARN("%f %f %f %f", gravity_torque_(j), desired_torque_(j), 1. * sin(2*M_PI*20*t_curr), t_curr);
 //}
     //joints_[j]->setEffort(gravity_torque_(j) + desired_torque_(j));
-    joints_[j]->setPosition(q(j), 0, gravity_torque_(j));//, dq(j), gravity_torque_(j) + desired_torque_(j));
+    if (desired_torque_(j) == 0) {
+      joints_[j]->setEffort(gravity_torque_(j));
+    } else {
+      joints_[j]->setPosition(q_(j), 0, gravity_torque_(j));//, dq(j), gravity_torque_(j) + desired_torque_(j));
+    }
     // joints_[j]->setEffort(desired_torque_(j));
   }
 }
